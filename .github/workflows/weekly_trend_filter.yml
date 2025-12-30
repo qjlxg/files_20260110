@@ -2,19 +2,18 @@ name: weekly_trend_filter
 
 on:
   schedule:
-    # 每天北京时间 17:00 运行 (对应 UTC 09:00)
-    - cron: '0 9 * * *'
+    - cron: '0 9 * * *' # 北京时间 17:00 自动触发
   push:
     paths:
       - 'weekly_trend_filter.py'
       - '.github/workflows/weekly_trend_filter.yml'
-  workflow_dispatch: # 支持手动点击运行
+  workflow_dispatch: # 支持手动运行
 
 jobs:
-  run_filter:
+  run_strategy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
+      - name: Checkout Code
         uses: actions/checkout@v3
 
       - name: Set up Python
@@ -25,17 +24,16 @@ jobs:
       - name: Install Dependencies
         run: pip install pandas numpy
 
-      - name: Execute Script
+      - name: Run Filter Script
         run: python weekly_trend_filter.py
 
-      - name: Push Results to Repo
+      - name: Push Results
         run: |
-          git config --local user.email "actions@github.com"
-          git config --local user.name "GitHub Action"
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
           git add results/
-          # 检查是否有文件变动，有则提交推送
           if [ -n "$(git status --porcelain)" ]; then
-            git commit -m "Auto-pick: $(date +'%Y-%m-%d %H:%M') (CST)"
+            git commit -m "Auto pick $(date +'%Y-%m-%d %H:%M') (CST)"
             git push
           else
             echo "No changes to commit"
