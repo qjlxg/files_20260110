@@ -1,0 +1,56 @@
+name: Strategy_Full_Version
+
+on:
+  schedule:
+    - cron: '30 11 * * *' # 北京时间每日 19:30 执行
+  push:
+    paths:
+      - 'comprehensive_strategy_v3.py' # 脚本更新时触发测试
+      - '.github/workflows/strategy_full.yml'
+  workflow_dispatch:      # 支持手动点击按钮执行
+
+jobs:
+  filter_job:
+    runs-on: ubuntu-latest
+    
+    # 授予写入权限，否则 git push 会失败
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install Dependencies
+        run: |
+          pip install pandas numpy
+
+      - name: Run Full Strategy Script
+        run: |
+          # 运行你整合的完整版脚本
+          python comprehensive_strategy_v3.py
+
+      - name: Git Push Results
+        run: |
+          # 1. 配置 Git 信息
+          git config --local user.email "action@github.com"
+          git config --local user.name "FullStrategyBot"
+          
+          # 2. 获取当前日期并存入临时变量（避免 YAML 解析错误）
+          CURRENT_DATE=$(date +'%Y-%m-%d')
+          
+          # 3. 添加生成的结果文件
+          git add results/
+          
+          # 4. 关键逻辑：检查是否有文件变化。-n 表示非空，只有有新文件时才 commit
+          if [ -n "$(git status --porcelain)" ]; then
+            git commit -m "自动更新：全战法复盘数据 $CURRENT_DATE"
+            git push
+          else
+            echo "今日未发现符合战法信号的个股，无需提交更新。"
+          fi
