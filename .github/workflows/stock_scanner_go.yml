@@ -57,7 +57,7 @@ jobs:
           git stash pop || echo "No changes to pop"
           
           # 5. 提交并推送
-          git add results/**/*.csv
+          git add results/
           if [ -n "$(git status --porcelain)" ]; then
             echo "发现新数据，准备提交..."
             git commit -m "🤖 自动更新极致精选结果: $(date +'%Y-%m-%d %H:%M')"
