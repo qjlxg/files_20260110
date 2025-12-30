@@ -15,7 +15,7 @@ MIN_VOLUME_RATIO = 0.2
 MAX_VOLUME_RATIO = 1.2      # 严格限制在0.85以下，只做缩量洗盘
 
 # --- 极度超跌：锁定V型反转高发区 ---
-RSI6_MAX = 28              # 锁定极致超跌区25 
+RSI6_MAX = 30              # 锁定极致超跌区25 
 KDJ_K_MAX = 30               # 确保K值在底部磨底
 MIN_PROFIT_POTENTIAL = 10    # 要求反弹空间至少15%
 
