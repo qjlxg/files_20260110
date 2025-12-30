@@ -9,108 +9,114 @@ DATA_DIR = 'stock_data'
 NAMES_FILE = 'stock_names.csv'
 OUTPUT_BASE = 'results'
 
-def calculate_macd(df, fast=12, slow=26, signal=9):
-    """计算MACD指标"""
-    exp1 = df['close'].ewm(span=fast, adjust=False).mean()
-    exp2 = df['close'].ewm(span=slow, adjust=False).mean()
-    df['dif'] = exp1 - exp2
-    df['dea'] = df['dif'].ewm(span=signal, adjust=False).mean()
-    df['macd'] = 2 * (df['dif'] - df['dea'])
-    return df
+# 字段映射字典 (CSV中文转程序变量)
+COL_MAP = {
+    '日期': 'date',
+    '开盘': 'open',
+    '最高': 'high',
+    '最低': 'low',
+    '收盘': 'close',
+    '成交量': 'volume'
+}
 
-def process_single_stock(file_name):
-    """处理单只股票的筛选逻辑"""
-    code = file_name.split('.')[0]
+def calculate_macd(prices, fast=12, slow=26, signal=9):
+    """计算 MACD 指标"""
+    exp1 = prices.ewm(span=fast, adjust=False).mean()
+    exp2 = prices.ewm(span=slow, adjust=False).mean()
+    dif = exp1 - exp2
+    dea = dif.ewm(span=signal, adjust=False).mean()
+    return dif, dea
+
+def check_strategy(df):
+    """
+    实现图片中的筛选逻辑：
+    1. MACD 水上：DIF > 0 且 DEA > 0
+    2. 主升浪形态：DIF > DEA (多头排列)
+    3. 放量：最新成交量 > 过去5周期均量的 1.3 倍
+    """
+    if len(df) < 35: return False
     
-    # 基础代码过滤：必须是6位数字且排除30开头的创业板
-    if not (code.isdigit() and len(code) == 6) or code.startswith('30'):
-        return None
+    dif, dea = calculate_macd(df['close'])
+    
+    last_dif = dif.iloc[-1]
+    last_dea = dea.iloc[-1]
+    last_vol = df['volume'].iloc[-1]
+    avg_vol = df['volume'].iloc[-6:-1].mean() # 过去5个周期的均量
+    
+    # 逻辑判断
+    is_water_up = (last_dif > 0) and (last_dea > 0)
+    is_gold_cross = last_dif > last_dea
+    vol_breakout = last_vol > (avg_vol * 1.3)
+    
+    return is_water_up and is_gold_cross and vol_breakout
+
+def process_stock(file_name):
+    code = file_name.split('.')[0]
+    # 排除 30 开头的创业板
+    if code.startswith('30'): return None
     
     try:
         file_path = os.path.join(DATA_DIR, file_name)
+        # 读取CSV并重命名表头以便处理
         df = pd.read_csv(file_path)
-        if len(df) < 60: return None
+        df = df.rename(columns=COL_MAP)
         
-        # 条件1：最新收盘价在 5.0 - 20.0 元之间
-        last_close = df['close'].iloc[-1]
-        if not (5.0 <= last_close <= 20.0):
-            return None
-
-        # 转换为周线数据
+        if df.empty or len(df) < 30: return None
+        
+        # 基础过滤：价格 5.0 - 20.0 元
+        last_price = df['close'].iloc[-1]
+        if not (5.0 <= last_price <= 20.0): return None
+        
+        # --- 日线筛选 ---
+        is_daily_hit = check_strategy(df)
+        
+        # --- 周线筛选 ---
         df['date'] = pd.to_datetime(df['date'])
-        df.set_index('date', inplace=True)
-        # 聚合：开盘价(首)、最高(最)、最低(最)、收盘(末)、成交量(和)
-        df_weekly = df.resample('W').agg({
+        df_weekly = df.resample('W', on='date').agg({
             'open':'first', 
             'high':'max', 
             'low':'min', 
             'close':'last', 
             'volume':'sum'
         }).dropna()
+        is_weekly_hit = check_strategy(df_weekly)
         
-        # 计算周线MACD
-        df_weekly = calculate_macd(df_weekly)
-        
-        if len(df_weekly) < 5: return None
-        
-        last_week = df_weekly.iloc[-1]
-        prev_weeks_vol = df_weekly['volume'].iloc[-5:-1].mean()
-        
-        # 图片逻辑实现：
-        # 1. MACD在水上（DIF和DEA均大于0）- 代表中长线走强
-        is_water_up = last_week['dif'] > 0 and last_week['dea'] > 0
-        # 2. 当前处于金叉或多头排列（DIF > DEA）- 代表正处于主升阶段
-        is_gold_cross = last_week['dif'] > last_week['dea']
-        # 3. 成交量配合（当前周量比过去4周均量放大1.2倍以上）- 对应图中"3"的放量
-        vol_breakout = last_week['volume'] > prev_weeks_vol * 1.2
-        
-        if is_water_up and is_gold_cross and vol_breakout:
-            return code
-    except Exception:
+        return {'code': code, 'daily': is_daily_hit, 'weekly': is_weekly_hit}
+    except:
         return None
-    return None
 
 def main():
-    # 读取股票名称映射表并排除ST
-    if not os.path.exists(NAMES_FILE):
-        print(f"错误: 找不到 {NAMES_FILE}")
-        return
-        
+    # 1. 加载名称并排除 ST
+    if not os.path.exists(NAMES_FILE): return
     names_df = pd.read_csv(NAMES_FILE)
     names_df['code'] = names_df['code'].astype(str).str.zfill(6)
-    # 排除名称中带ST的
     names_df = names_df[~names_df['name'].str.contains('ST|st')]
-    valid_codes_set = set(names_df['code'])
+    valid_codes = set(names_df['code'])
 
-    # 扫描数据目录
-    if not os.path.exists(DATA_DIR):
-        print(f"错误: 目录 {DATA_DIR} 不存在")
-        return
-        
-    files = [f for f in os.listdir(DATA_DIR) if f.endswith('.csv') and f.split('.')[0] in valid_codes_set]
+    # 2. 扫描数据目录并并行执行
+    if not os.path.exists(DATA_DIR): return
+    files = [f for f in os.listdir(DATA_DIR) if f.endswith('.csv') and f.split('.')[0] in valid_codes]
     
-    # 并行处理以提高速度
-    print(f"开始扫描 {len(files)} 个文件...")
+    daily_list, weekly_list = [], []
     with ProcessPoolExecutor() as executor:
-        filtered_codes = list(executor.map(process_single_stock, files))
+        results = list(executor.map(process_stock, files))
     
-    results = [c for c in filtered_codes if c is not None]
-    
-    # 关联名称并保存
-    final_df = names_df[names_df['code'].isin(results)]
-    
-    # 创建年月目录 (例如: results/202512/)
+    for res in results:
+        if res:
+            if res['daily']: daily_list.append(res['code'])
+            if res['weekly']: weekly_list.append(res['code'])
+
+    # 3. 输出与保存
     now = datetime.now()
-    dir_path = os.path.join(OUTPUT_BASE, now.strftime('%Y%m'))
-    os.makedirs(dir_path, exist_ok=True)
-    
-    # 保存结果，文件名带时间戳
-    timestamp = now.strftime('%Y%m%d_%H%M%S')
-    file_path = os.path.join(dir_path, f'pick_{timestamp}.csv')
-    
-    final_df.to_csv(file_path, index=False, encoding='utf-8-sig')
-    print(f"任务完成！筛选出 {len(final_df)} 只符合周线主升浪形态的股票。")
-    print(f"结果路径: {file_path}")
+    month_dir = os.path.join(OUTPUT_BASE, now.strftime('%Y%m'))
+    os.makedirs(month_dir, exist_ok=True)
+    ts = now.strftime('%Y%m%d_%H%M%S')
+
+    for label, codes in [('daily', daily_list), ('weekly', weekly_list)]:
+        out_df = names_df[names_df['code'].isin(codes)]
+        file_name = f"{label}_pick_{ts}.csv"
+        out_df.to_csv(os.path.join(month_dir, file_name), index=False, encoding='utf-8-sig')
+        print(f"{label} 筛选完成，匹配到 {len(out_df)} 只股票")
 
 if __name__ == '__main__':
     main()
