@@ -70,6 +70,9 @@ def process_single_stock(args):
         if len(df_raw) < 60: return None
         
         df = calculate_indicators(df_raw)
+        # 止跌确认
+        consecutive_drops = (df['收盘'].diff() < 0).astype(int).iloc[:-1][::-1].cumprod().sum()
+        
         latest = df.iloc[-1]
         
         # 1. 基础门槛
