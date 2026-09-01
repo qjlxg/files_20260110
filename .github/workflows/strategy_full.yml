@@ -1,0 +1,57 @@
+name: Strategy_Full_Version
+
+on:
+  schedule:
+    - cron: '30 11 * * *' # 北京时间每日 19:30 执行
+  push:
+    paths:
+      - 'comprehensive_strategy_v4.py' # 注意：如果脚本名改了，这里要同步
+      - '.github/workflows/strategy_full.yml'
+  workflow_dispatch:      # 支持手动点击按钮执行
+
+jobs:
+  filter_job:
+    runs-on: ubuntu-latest
+    
+    # 授予写入权限，确保能够推送 CSV 文件回仓库
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install Dependencies
+        run: |
+          pip install pandas numpy
+
+      - name: Run Full Strategy Script
+        run: |
+          # 运行升级后的专家版分类脚本 (v4)
+          python comprehensive_strategy_v4.py
+
+      - name: Git Push Results
+        run: |
+          # 1. 配置 Git 信息
+          git config --local user.email "action@github.com"
+          git config --local user.name "FullStrategyBot"
+          
+          # 2. 获取当前日期
+          CURRENT_DATE=$(date +'%Y-%m-%d')
+          
+          # 3. 递归添加 results 文件夹下的所有新文件和分类子文件夹
+          # git add -A 会监控所有文件的增加、修改和删除
+          git add results/
+          
+          # 4. 关键判断逻辑：只有发现 results 目录下有实质性更新才进行提交
+          if [ -n "$(git status --porcelain results/)" ]; then
+            git commit -m "复盘自动更新 [$CURRENT_DATE]：战法分类扫描已完成"
+            git push
+          else
+            echo "今日战法筛选未产生新信号，无需更新仓库。"
+          fi

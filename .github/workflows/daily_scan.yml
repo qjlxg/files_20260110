@@ -1,0 +1,44 @@
+name: Stock Strategy Picker Auto-Run
+
+on:
+  schedule:
+    # 每天北京时间 17:00 (UTC 09:00)
+    - cron: '0 9 * * *'
+  workflow_dispatch: # 支持手动点击运行
+  push:
+    paths:
+      - 'stock_strategy_picker.py' # 当脚本变动时自动运行
+      - '.github/workflows/daily_scan.yml'
+
+jobs:
+  run-strategy-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: pip install pandas
+
+      - name: Run Strategy Picker
+        run: python stock_strategy_picker.py
+
+      - name: Commit and Push Results
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action Bot"
+          if [ -n "$(git status --porcelain)" ]; then
+            git add .
+            git commit -m "Update scan results: $(date +'%Y-%m-%d %H:%M:%S') (Shanghai)"
+            git push
+          else
+            echo "Nothing to update."
+          fi
