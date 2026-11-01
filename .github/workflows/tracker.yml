@@ -1,0 +1,32 @@
+name: Buy Signal Tracker
+
+on:
+  schedule:
+    - cron: '30 7 * * *' # 北京时间 15:30 运行
+  workflow_dispatch: 
+
+jobs:
+  track:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Run Tracker
+        run: |
+          pip install pandas
+          python tracker_strategy.py
+      - name: Push
+        run: |
+          git config --local user.email "tracker@github.com"
+          git config --local user.name "Tracker Bot"
+          if [ -n "$(git status --porcelain)" ]; then
+            git add .
+            git commit -m "Update buy signals $(date)"
+            git push
+          fi
